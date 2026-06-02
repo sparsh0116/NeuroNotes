@@ -4,8 +4,10 @@ import ReactMarkdown from "react-markdown";
 
 function App() {
   const [selectedFile, setSelectedFile] = useState(null);
-  const [message, setMessage] = useState("");
+  const [notes, setNotes] = useState("");
+  const [flashcards, setFlashcards] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("notes");
 
   const handleFileChange = (event) => {
     setSelectedFile(event.target.files[0]);
@@ -28,10 +30,13 @@ function App() {
         formData
       );
 
-      setMessage(response.data.notes);
+      setNotes(response.data.notes || "");
+      setFlashcards(response.data.flashcards || "");
+      setActiveTab("notes");
     } catch (error) {
       console.error(error);
-      setMessage("Failed to generate notes.");
+      setNotes("Failed to generate content.");
+      setFlashcards("");
     } finally {
       setLoading(false);
     }
@@ -53,7 +58,7 @@ function App() {
       <div
         style={{
           width: "100%",
-          maxWidth: "1000px",
+          maxWidth: "1100px",
         }}
       >
         <div
@@ -138,43 +143,95 @@ function App() {
                 fontWeight: "700",
               }}
             >
-              {loading ? "Generating Notes..." : "Generate Notes"}
+              {loading ? "Generating..." : "Generate"}
             </button>
           </div>
 
-          {message && (
-            <div
-              style={{
-                marginTop: "30px",
-                background: "#111827",
-                borderRadius: "18px",
-                padding: "30px",
-                border: "1px solid #334155",
-                maxHeight: "600px",
-                overflowY: "auto",
-              }}
-            >
-              <h2
+          {(notes || flashcards) && (
+            <>
+              <div
                 style={{
-                  color: "#f8fafc",
+                  display: "flex",
+                  gap: "12px",
+                  marginTop: "30px",
                   marginBottom: "20px",
-                  fontSize: "28px",
                 }}
               >
-                📘 Generated Notes
-              </h2>
+                <button
+                  onClick={() => setActiveTab("notes")}
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: "10px",
+                    border: "none",
+                    cursor: "pointer",
+                    background:
+                      activeTab === "notes"
+                        ? "#2563eb"
+                        : "#1e293b",
+                    color: "white",
+                    fontWeight: "600",
+                  }}
+                >
+                  📘 Notes
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("flashcards")}
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: "10px",
+                    border: "none",
+                    cursor: "pointer",
+                    background:
+                      activeTab === "flashcards"
+                        ? "#7c3aed"
+                        : "#1e293b",
+                    color: "white",
+                    fontWeight: "600",
+                  }}
+                >
+                  🧠 Flashcards
+                </button>
+              </div>
 
               <div
                 style={{
-                  color: "#cbd5e1",
-                  lineHeight: "1.9",
-                  fontSize: "16px",
-                  textAlign: "left",
+                  background: "#111827",
+                  borderRadius: "18px",
+                  padding: "30px",
+                  border: "1px solid #334155",
+                  maxHeight: "650px",
+                  overflowY: "auto",
                 }}
               >
-                <ReactMarkdown>{message}</ReactMarkdown>
+                <h2
+                  style={{
+                    color: "#f8fafc",
+                    marginBottom: "20px",
+                    fontSize: "28px",
+                  }}
+                >
+                  {activeTab === "notes"
+                    ? "📘 Generated Notes"
+                    : "🧠 Generated Flashcards"}
+                </h2>
+
+                <div
+                  style={{
+                    color: "#cbd5e1",
+                    lineHeight: "1.9",
+                    fontSize: "16px",
+                    textAlign: "left",
+                  }}
+                >
+                  <ReactMarkdown>
+                    {activeTab === "notes"
+                      ? notes
+                      : flashcards}
+                  </ReactMarkdown>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>

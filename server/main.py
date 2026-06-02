@@ -6,7 +6,7 @@ import requests
 
 app = FastAPI()
 
-# CORS Configuration
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,19 +16,34 @@ app.add_middleware(
 )
 
 
+# -----------------------------
+# Split large PDFs into chunks
+# -----------------------------
+def split_text(text, chunk_size=3000):
+    chunks = []
+
+    for i in range(0, len(text), chunk_size):
+        chunks.append(text[i:i + chunk_size])
+
+    return chunks
+
+
+# -----------------------------
+# Generate notes using Ollama
+# -----------------------------
 def generate_notes(text):
+
     prompt = f"""
 You are an expert study assistant.
 
-Create professional study notes in MARKDOWN format.
+Convert the following content into professional study notes.
 
-Structure:
+Format:
 
-# Topic Title
+# Topic
 
 ## Key Concepts
-- Important concepts
-- Important concepts
+- Bullet points
 
 ## Important Definitions
 - Definitions
@@ -51,7 +66,7 @@ Content:
                 "prompt": prompt,
                 "stream": False
             },
-            timeout=120
+            timeout=300
         )
 
         if response.status_code != 200:
@@ -59,7 +74,7 @@ Content:
 
         data = response.json()
 
-        return data.get("response", "No response generated.")
+        return data.get("response", "")
 
     except Exception as e:
         return f"Error: {str(e)}"
@@ -88,20 +103,31 @@ async def upload_pdf(file: UploadFile = File(...)):
         text = page.extract_text()
 
         if text:
-            text = text.replace("\n", " ")
             extracted_text += text + "\n"
 
     if not extracted_text.strip():
+
         return {
             "filename": file.filename,
             "notes": "No readable text found in PDF."
         }
 
-    notes = generate_notes(
-        extracted_text[:6000]
-    )
+    # Split large PDFs
+    chunks = split_text(extracted_text)
+
+    all_notes = []
+
+    for index, chunk in enumerate(chunks):
+
+        print(f"Processing Chunk {index + 1}/{len(chunks)}")
+
+        notes = generate_notes(chunk)
+
+        all_notes.append(notes)
+
+    final_notes = "\n\n".join(all_notes)
 
     return {
         "filename": file.filename,
-        "notes": notes
+        "notes": final_notes
     }
