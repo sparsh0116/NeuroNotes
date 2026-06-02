@@ -7,8 +7,14 @@ function App() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [asking, setAsking] = useState(false);
+
   const handleFileChange = (event) => {
-    setSelectedFile(event.target.files[0]);
+    if (event.target.files.length > 0) {
+      setSelectedFile(event.target.files[0]);
+    }
   };
 
   const handleUpload = async () => {
@@ -16,13 +22,14 @@ function App() {
       alert("Please select a PDF first.");
       return;
     }
-    
 
     const formData = new FormData();
     formData.append("file", selectedFile);
 
     try {
       setLoading(true);
+      setAnswer("");
+      setQuestion("");
 
       const response = await axios.post(
         "http://127.0.0.1:8000/upload-pdf/",
@@ -35,6 +42,28 @@ function App() {
       setNotes("Failed to generate notes.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const askQuestion = async () => {
+    if (!question.trim()) return;
+
+    try {
+      setAsking(true);
+
+      const response = await axios.post(
+        "http://127.0.0.1:8000/ask-question/",
+        {
+          question: question,
+        }
+      );
+
+      setAnswer(response.data.answer || "");
+    } catch (error) {
+      console.error(error);
+      setAnswer("Failed to get answer.");
+    } finally {
+      setAsking(false);
     }
   };
 
@@ -90,7 +119,7 @@ function App() {
               marginBottom: "40px",
             }}
           >
-            Transform PDFs into AI-powered study notes instantly
+            Upload PDFs, generate notes and chat with your documents
           </p>
 
           <div
@@ -139,7 +168,9 @@ function App() {
                 fontWeight: "700",
               }}
             >
-              {loading ? "Generating Notes..." : "Generate Notes"}
+              {loading
+                ? "Generating Notes..."
+                : "Generate Notes"}
             </button>
           </div>
 
@@ -175,6 +206,81 @@ function App() {
               >
                 <ReactMarkdown>{notes}</ReactMarkdown>
               </div>
+            </div>
+          )}
+
+          {notes && (
+            <div
+              style={{
+                marginTop: "30px",
+                background: "#111827",
+                borderRadius: "18px",
+                padding: "30px",
+                border: "1px solid #334155",
+              }}
+            >
+              <h2
+                style={{
+                  color: "#f8fafc",
+                  marginBottom: "20px",
+                }}
+              >
+                💬 Chat With PDF
+              </h2>
+
+              <input
+                type="text"
+                placeholder="Ask anything from the PDF..."
+                value={question}
+                onChange={(e) =>
+                  setQuestion(e.target.value)
+                }
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  borderRadius: "10px",
+                  border: "1px solid #334155",
+                  background: "#0f172a",
+                  color: "white",
+                  marginBottom: "15px",
+                  boxSizing: "border-box",
+                }}
+              />
+
+              <button
+                onClick={askQuestion}
+                disabled={asking}
+                style={{
+                  background:
+                    "linear-gradient(90deg, #2563eb, #7c3aed)",
+                  color: "white",
+                  border: "none",
+                  padding: "12px 24px",
+                  borderRadius: "10px",
+                  cursor: "pointer",
+                }}
+              >
+                {asking
+                  ? "Thinking..."
+                  : "Ask Question"}
+              </button>
+
+              {answer && (
+                <div
+                  style={{
+                    marginTop: "20px",
+                    background: "#0f172a",
+                    padding: "20px",
+                    borderRadius: "12px",
+                    color: "#cbd5e1",
+                    lineHeight: "1.8",
+                  }}
+                >
+                  <ReactMarkdown>
+                    {answer}
+                  </ReactMarkdown>
+                </div>
+              )}
             </div>
           )}
         </div>

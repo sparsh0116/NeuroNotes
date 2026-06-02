@@ -6,6 +6,9 @@ import requests
 
 app = FastAPI()
 
+# Store latest uploaded PDF text
+pdf_content = ""
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +32,7 @@ def split_text(text, chunk_size=3000):
 
 
 # -----------------------------
-# Generate notes using Ollama
+# Generate Notes
 # -----------------------------
 def generate_notes(text):
 
@@ -59,6 +62,7 @@ Content:
 """
 
     try:
+
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
@@ -69,14 +73,56 @@ Content:
             timeout=300
         )
 
-        if response.status_code != 200:
-            return "Error generating notes."
+        data = response.json()
+
+        return data.get("response", "")
+
+    except Exception as e:
+
+        return f"Error: {str(e)}"
+
+
+# -----------------------------
+# Ask Questions
+# -----------------------------
+def ask_pdf_question(question):
+
+    global pdf_content
+
+    prompt = f"""
+Answer the user's question ONLY using the PDF content.
+
+If the answer is not present in the PDF,
+say:
+'The information is not available in the uploaded PDF.'
+
+PDF CONTENT:
+
+{pdf_content[:12000]}
+
+QUESTION:
+
+{question}
+"""
+
+    try:
+
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "llama3",
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=300
+        )
 
         data = response.json()
 
         return data.get("response", "")
 
     except Exception as e:
+
         return f"Error: {str(e)}"
 
 
@@ -87,8 +133,13 @@ def home():
     }
 
 
+# -----------------------------
+# Upload PDF
+# -----------------------------
 @app.post("/upload-pdf/")
 async def upload_pdf(file: UploadFile = File(...)):
+
+    global pdf_content
 
     pdf_bytes = await file.read()
 
@@ -112,14 +163,18 @@ async def upload_pdf(file: UploadFile = File(...)):
             "notes": "No readable text found in PDF."
         }
 
-    # Split large PDFs
+    # Save PDF for chat feature
+    pdf_content = extracted_text
+
     chunks = split_text(extracted_text)
 
     all_notes = []
 
     for index, chunk in enumerate(chunks):
 
-        print(f"Processing Chunk {index + 1}/{len(chunks)}")
+        print(
+            f"Processing Chunk {index + 1}/{len(chunks)}"
+        )
 
         notes = generate_notes(chunk)
 
@@ -130,4 +185,25 @@ async def upload_pdf(file: UploadFile = File(...)):
     return {
         "filename": file.filename,
         "notes": final_notes
+    }
+
+
+# -----------------------------
+# Chat With PDF
+# -----------------------------
+@app.post("/ask-question/")
+async def ask_question(data: dict):
+
+    question = data.get("question", "")
+
+    if not question:
+
+        return {
+            "answer": "Please provide a question."
+        }
+
+    answer = ask_pdf_question(question)
+
+    return {
+        "answer": answer
     }
