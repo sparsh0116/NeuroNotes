@@ -34,28 +34,41 @@ def split_text(text, chunk_size=3000):
 def generate_notes(text):
 
     prompt = f"""
-You are an expert study assistant.
+You are an expert study notes generator.
 
-Convert the following content into professional study notes.
+Convert the following PDF content into beautiful markdown notes.
 
 Format:
 
-# Topic
+# Title
+
+## Overview
 
 ## Key Concepts
-- Bullet points
+
+- Point
 
 ## Important Definitions
-- Definitions
 
-## Important Facts
-- Facts
+### Definition
 
-## Quick Revision Notes
-- Revision points
+Explanation
 
-Content:
+## Examples
+
+- Example
+
+## Quick Revision
+
+✅ Point
+
+PDF CONTENT:
+
 {text}
+
+Return ONLY markdown notes.
+Do not ask for a PDF.
+Do not ask questions.
 """
 
     try:
