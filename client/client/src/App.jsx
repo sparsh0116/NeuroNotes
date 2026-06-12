@@ -67,7 +67,10 @@ export default function App() {
 
       const res = await axios.post(
         "http://127.0.0.1:8000/ask-question/",
-        { question }
+        { 
+          question,
+          notes
+        }
       );
 
       setMessages((prev) => [
