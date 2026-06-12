@@ -1,18 +1,17 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 import PyPDF2
 import io
 import requests
 
-app = FastAPI()
+app = FastAPI(title="NeuroNotes V4")
 
-# Pydantic Models
-class QuestionRequest(BaseModel):
-    question: str
-    notes: str = None
-
+# =========================
 # CORS
+# =========================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,10 +20,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================
+# Models
+# =========================
 
-# -----------------------------
-# Split large PDFs into chunks
-# -----------------------------
+class QuestionRequest(BaseModel):
+    question: str
+    notes: Optional[str] = None
+
+
+# =========================
+# Memory Storage
+# =========================
+
+notes_storage = {
+    "current_notes": ""
+}
+
+
+# =========================
+# Utilities
+# =========================
+
 def split_text(text, chunk_size=3000):
     chunks = []
 
@@ -34,20 +51,36 @@ def split_text(text, chunk_size=3000):
     return chunks
 
 
-# Store notes for chat context
-notes_storage = {}
+# =========================
+# Ollama Health Check
+# =========================
 
-# -----------------------------
-# Generate notes using Ollama
-# -----------------------------
-def generate_notes(text):
+def check_ollama():
+
+    try:
+        response = requests.get(
+            "http://localhost:11434/api/tags",
+            timeout=10
+        )
+
+        return response.status_code == 200
+
+    except:
+        return False
+
+
+# =========================
+# Generate Notes
+# =========================
+
+def generate_notes(chunk):
 
     prompt = f"""
-You are an expert study notes generator.
+You are an expert study assistant.
 
-Convert the following PDF content into beautiful markdown notes.
+Convert the provided content into professional markdown notes.
 
-Format:
+FORMAT:
 
 # Title
 
@@ -71,16 +104,15 @@ Explanation
 
 ✅ Point
 
-PDF CONTENT:
+CONTENT:
 
-{text}
+{chunk}
 
-Return ONLY markdown notes.
-Do not ask for a PDF.
-Do not ask questions.
+Return markdown only.
 """
 
     try:
+
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
@@ -92,35 +124,47 @@ Do not ask questions.
         )
 
         if response.status_code != 200:
-            return "Error generating notes."
+            return "Failed to generate notes."
 
         data = response.json()
 
         return data.get("response", "")
 
     except Exception as e:
+
         return f"Error: {str(e)}"
 
 
-# -----------------------------
-# Answer questions about notes using Ollama
-# -----------------------------
-def answer_question(notes, question):
-    
-    prompt = f"""
-You are a helpful AI assistant that answers questions based on the provided study notes.
+# =========================
+# Chat With Notes
+# =========================
 
-STUDY NOTES:
+def answer_question(notes, question):
+
+    prompt = f"""
+You are NeuroNotes AI.
+
+Answer the question ONLY using the provided notes.
+
+NOTES:
+
 {notes}
 
 QUESTION:
+
 {question}
 
-Please provide a clear, concise answer based on the study notes above.
-If the answer is not found in the notes, say so politely.
+RULES:
+
+1. Use notes only.
+2. Be concise.
+3. Use markdown.
+4. If answer not found, say:
+   "This information is not present in the notes."
 """
 
     try:
+
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={
@@ -132,90 +176,161 @@ If the answer is not found in the notes, say so politely.
         )
 
         if response.status_code != 200:
-            return "Error generating answer."
+            return "Unable to generate answer."
 
         data = response.json()
 
         return data.get("response", "")
 
     except Exception as e:
+
         return f"Error: {str(e)}"
 
 
-@app.get("/")
-def home():
+# =========================
+# Health Check
+# =========================
+
+@app.get("/health")
+def health():
+
     return {
-        "message": "NeuroNotes Backend Running 🚀"
+        "status": "running",
+        "ollama": check_ollama()
     }
 
 
+# =========================
+# Home
+# =========================
+
+@app.get("/")
+def home():
+
+    return {
+        "message": "NeuroNotes V4 Backend Running 🚀"
+    }
+
+
+# =========================
+# Upload PDF
+# =========================
+
 @app.post("/upload-pdf/")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...)
+):
 
-    pdf_bytes = await file.read()
+    try:
 
-    pdf_reader = PyPDF2.PdfReader(
-        io.BytesIO(pdf_bytes)
-    )
+        pdf_bytes = await file.read()
 
-    extracted_text = ""
+        pdf_reader = PyPDF2.PdfReader(
+            io.BytesIO(pdf_bytes)
+        )
 
-    for page in pdf_reader.pages:
+        extracted_text = ""
 
-        text = page.extract_text()
+        for page in pdf_reader.pages:
 
-        if text:
-            extracted_text += text + "\n"
+            text = page.extract_text()
 
-    if not extracted_text.strip():
+            if text:
+                extracted_text += text + "\n"
+
+        if not extracted_text.strip():
+
+            return {
+                "filename": file.filename,
+                "notes": "No readable text found in PDF."
+            }
+
+        chunks = split_text(
+            extracted_text,
+            chunk_size=3000
+        )
+
+        all_notes = []
+
+        total_chunks = len(chunks)
+
+        for index, chunk in enumerate(chunks):
+
+            print(
+                f"Processing Chunk {index + 1}/{total_chunks}"
+            )
+
+            notes = generate_notes(chunk)
+
+            all_notes.append(notes)
+
+        final_notes = "\n\n".join(
+            all_notes
+        )
+
+        notes_storage[
+            "current_notes"
+        ] = final_notes
+
+        print(
+            f"Generated Notes Length: {len(final_notes)}"
+        )
 
         return {
             "filename": file.filename,
-            "notes": "No readable text found in PDF."
+            "notes": final_notes
         }
 
-    # Split large PDFs
-    chunks = split_text(extracted_text)
+    except Exception as e:
 
-    all_notes = []
+        return {
+            "error": str(e)
+        }
 
-    for index, chunk in enumerate(chunks):
 
-        print(f"Processing Chunk {index + 1}/{len(chunks)}")
-
-        notes = generate_notes(chunk)
-
-        all_notes.append(notes)
-
-    final_notes = "\n\n".join(all_notes)
-    
-    # Store notes for chat context
-    notes_storage["current_notes"] = final_notes
-
-    return {
-        "filename": file.filename,
-        "notes": final_notes
-    }
-
+# =========================
+# Ask Question
+# =========================
 
 @app.post("/ask-question/")
-async def ask_question(request: QuestionRequest):
-    
-    question = request.question
-    notes = request.notes or notes_storage.get("current_notes", "")
-    
-    if not question.strip():
+async def ask_question(
+    request: QuestionRequest
+):
+
+    try:
+
+        question = request.question
+
+        if not question.strip():
+
+            return {
+                "answer":
+                "Please ask a valid question."
+            }
+
+        notes = notes_storage.get(
+            "current_notes",
+            ""
+        )
+
+        if not notes:
+
+            return {
+                "answer":
+                "Generate notes first."
+            }
+
+        answer = answer_question(
+            notes,
+            question
+        )
+
         return {
-            "answer": "Please ask a valid question."
+            "answer": answer
         }
-    
-    if not notes.strip():
+
+    except Exception as e:
+
         return {
-            "answer": "Please generate notes from a PDF first before asking questions."
+            "answer": f"Error: {str(e)}"
         }
-    
-    answer = answer_question(notes, question)
-    
-    return {
-        "answer": answer
-    }

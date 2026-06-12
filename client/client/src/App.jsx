@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import {
@@ -8,7 +8,11 @@ import {
   Sun,
   Send,
   Brain,
+  Copy,
+  Download,
 } from "lucide-react";
+
+const API = "http://127.0.0.1:8000";
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(true);
@@ -18,37 +22,68 @@ export default function App() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([]);
   const [asking, setAsking] = useState(false);
+  const [error, setError] = useState("");
+
+  const chatBottomRef = useRef(null);
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages]);
 
   const handleFileChange = (file) => {
-    if (file) setSelectedFile(file);
+    if (!file) return;
+
+    if (file.type !== "application/pdf") {
+      setError("Only PDF files are supported.");
+      return;
+    }
+
+    setSelectedFile(file);
+    setError("");
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file?.type === "application/pdf") {
-      handleFileChange(file);
-    }
+    handleFileChange(file);
   };
 
   const handleUpload = async () => {
     if (!selectedFile) return;
 
-    const formData = new FormData();
-    formData.append("file", selectedFile);
-
     try {
       setLoading(true);
+      setError("");
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
 
       const res = await axios.post(
-        "http://127.0.0.1:8000/upload-pdf/",
-        formData
+        `${API}/upload-pdf/`,
+        formData,
+        {
+          headers: {
+            "Content-Type":
+              "multipart/form-data",
+          },
+        }
+      );
+
+      console.log(
+        "Notes Length:",
+        res.data.notes?.length
       );
 
       setNotes(res.data.notes || "");
+      setMessages([]);
     } catch (err) {
-      console.log(err);
-      setNotes("Failed to generate notes.");
+      console.error(err);
+
+      setError(
+        "Failed to generate notes. Check backend."
+      );
     } finally {
       setLoading(false);
     }
@@ -57,19 +92,25 @@ export default function App() {
   const askQuestion = async () => {
     if (!question.trim()) return;
 
+    const currentQuestion = question;
+
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: question },
+      {
+        role: "user",
+        content: currentQuestion,
+      },
     ]);
+
+    setQuestion("");
 
     try {
       setAsking(true);
 
       const res = await axios.post(
-        "http://127.0.0.1:8000/ask-question/",
-        { 
-          question,
-          notes
+        `${API}/ask-question/`,
+        {
+          question: currentQuestion,
         }
       );
 
@@ -77,22 +118,56 @@ export default function App() {
         ...prev,
         {
           role: "assistant",
-          content: res.data.answer || "No answer generated.",
+          content:
+            res.data.answer ||
+            "No answer generated.",
         },
       ]);
+    } catch (err) {
+      console.error(err);
 
-      setQuestion("");
-    } catch {
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: "Failed to get answer.",
+          content:
+            "Unable to generate answer.",
         },
       ]);
     } finally {
       setAsking(false);
     }
+  };
+
+  const copyNotes = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        notes
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const downloadNotes = () => {
+    const blob = new Blob(
+      [notes],
+      {
+        type: "text/markdown",
+      }
+    );
+
+    const url =
+      window.URL.createObjectURL(blob);
+
+    const a =
+      document.createElement("a");
+
+    a.href = url;
+    a.download = "notes.md";
+    a.click();
+
+    window.URL.revokeObjectURL(url);
   };
 
   return (
@@ -105,226 +180,238 @@ export default function App() {
     >
       <div className="h-screen flex">
 
-        <aside className="w-[300px] border-r border-slate-800 p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-8">
+        {/* Sidebar */}
+
+        <aside className="w-[320px] border-r border-slate-800 p-6 flex flex-col">
+
+          <div className="flex justify-between items-center mb-8">
+
             <div className="flex items-center gap-3">
               <Brain size={32} />
-              <h1 className="text-2xl font-bold">NeuroNotes</h1>
+              <h1 className="font-bold text-2xl">
+                NeuroNotes V4
+              </h1>
             </div>
 
-            <button onClick={() => setDarkMode(!darkMode)}>
-              {darkMode ? <Sun size={22} /> : <Moon size={22} />}
+            <button
+              onClick={() =>
+                setDarkMode(!darkMode)
+              }
+            >
+              {darkMode
+                ? <Sun />
+                : <Moon />}
             </button>
+
           </div>
 
           <div
             onDrop={handleDrop}
-            onDragOver={(e) => e.preventDefault()}
-            className="border-2 border-dashed border-slate-700 rounded-3xl p-8 text-center hover:border-blue-500 hover:bg-slate-900/40 transition-all"
+            onDragOver={(e) =>
+              e.preventDefault()
+            }
+            className="border-2 border-dashed border-slate-700 rounded-3xl p-8 text-center"
           >
-            <Upload size={46} className="mx-auto mb-4 text-blue-400" />
+            <Upload
+              size={50}
+              className="mx-auto mb-4"
+            />
 
-            <h3 className="font-semibold text-lg">
-              Drag & Drop PDF
+            <h3 className="font-semibold">
+              Upload PDF
             </h3>
 
             <p className="text-slate-500 mt-2 mb-4">
-              or choose from device
+              Drag & Drop or Select
             </p>
 
             <input
               type="file"
               accept=".pdf"
               onChange={(e) =>
-                handleFileChange(e.target.files[0])
+                handleFileChange(
+                  e.target.files[0]
+                )
               }
             />
           </div>
 
           {selectedFile && (
-            <div className="mt-6 bg-slate-900 rounded-2xl p-4 border border-slate-800">
-              <div className="flex items-center gap-3">
+            <div className="mt-5 bg-slate-900 p-4 rounded-2xl">
+              <div className="flex gap-3 items-center">
                 <FileText />
-                <div>
-                  <p className="font-medium truncate">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-sm text-slate-400">
-                    PDF Ready
-                  </p>
-                </div>
+                <span className="truncate">
+                  {selectedFile.name}
+                </span>
               </div>
             </div>
           )}
 
           <button
             onClick={handleUpload}
-            disabled={loading}
-            className="mt-6 bg-gradient-to-r from-blue-600 to-purple-600 py-3 rounded-xl font-semibold"
+            disabled={
+              loading ||
+              !selectedFile
+            }
+            className="mt-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 disabled:opacity-50"
           >
-            {loading ? "Generating..." : "Generate Notes"}
+            {loading
+              ? "Generating Notes..."
+              : "Generate Notes"}
           </button>
 
+          {error && (
+            <div className="mt-4 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+
           <div className="mt-auto text-sm text-slate-500">
-            NeuroNotes V3 SaaS
+            NeuroNotes AI PDF Assistant
           </div>
+
         </aside>
 
-        <main className="flex-1 overflow-y-auto p-8 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-          <div className="mb-8">
-            <h1 className="text-5xl font-extrabold bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 text-transparent bg-clip-text">
-              NeuroNotes V3
-            </h1>
+        {/* Notes */}
 
-            <p className="text-slate-400 mt-3">
-              AI Powered PDF Intelligence
-            </p>
-          </div>
+        <main className="flex-1 overflow-y-auto p-8">
 
           {!notes ? (
-            <div className="h-[70vh] flex items-center justify-center text-slate-500">
-              Upload PDF to generate notes
+            <div className="h-full flex items-center justify-center text-slate-500">
+              Upload a PDF to generate notes
             </div>
           ) : (
-            <div className="bg-slate-900/70 backdrop-blur-xl rounded-3xl border border-slate-800 shadow-2xl p-10 h-[85vh] overflow-y-auto">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <div className="inline-flex px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-sm mb-4">
-                    AI Generated Notes
-                  </div>
+            <div className="bg-slate-900 rounded-3xl p-8">
 
-                  <h2 className="text-4xl font-bold">
+              <div className="flex justify-between items-center mb-8">
+
+                <div>
+                  <h2 className="text-3xl font-bold">
                     Study Notes
                   </h2>
 
                   <p className="text-slate-400 mt-2">
-                    Structured summary from your PDF
+                    AI Generated Notes
                   </p>
                 </div>
 
-                <button
-                  onClick={() =>
-                    navigator.clipboard.writeText(notes)
-                  }
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700"
-                >
-                  Copy
-                </button>
+                <div className="flex gap-2">
+
+                  <button
+                    onClick={copyNotes}
+                    className="bg-slate-800 p-3 rounded-xl"
+                  >
+                    <Copy size={18} />
+                  </button>
+
+                  <button
+                    onClick={downloadNotes}
+                    className="bg-slate-800 p-3 rounded-xl"
+                  >
+                    <Download size={18} />
+                  </button>
+
+                </div>
+
               </div>
 
-              <ReactMarkdown
-                components={{
-                  h1: ({ children }) => (
-                    <h1 className="text-5xl font-black text-white border-b border-slate-700 pb-5 mb-8">
-                      {children}
-                    </h1>
-                  ),
-                  h2: ({ children }) => (
-                    <h2 className="text-3xl font-bold text-blue-400 mt-12 mb-5">
-                      {children}
-                    </h2>
-                  ),
-                  h3: ({ children }) => (
-                    <h3 className="text-xl font-semibold text-purple-400 mt-6 mb-3">
-                      {children}
-                    </h3>
-                  ),
-                  p: ({ children }) => (
-                    <p className="text-slate-300 leading-8 mb-4">
-                      {children}
-                    </p>
-                  ),
-                  ul: ({ children }) => (
-                    <ul className="space-y-3 my-5">
-                      {children}
-                    </ul>
-                  ),
-                  li: ({ children }) => (
-                    <li className="flex gap-3 text-slate-300">
-                      <span className="text-blue-400">•</span>
-                      <span>{children}</span>
-                    </li>
-                  ),
-                }}
-              >
+              <pre className="whitespace-pre-wrap text-sm">
                 {notes}
-              </ReactMarkdown>
+              </pre>
+
             </div>
           )}
+
         </main>
 
-        <section className="w-[380px] border-l border-slate-800 flex flex-col">
+        {/* Chat */}
+
+        <section className="w-[400px] border-l border-slate-800 flex flex-col">
+
           <div className="p-5 border-b border-slate-800">
             <h2 className="font-bold text-xl">
-              Chat with PDF
+              Chat With Notes
             </h2>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <Brain
-                  size={55}
-                  className="text-purple-500 mb-5"
-                />
-                <h3 className="text-xl font-semibold">
-                  Chat With Your PDF
-                </h3>
-                <p className="text-slate-500 mt-2">
-                  Ask summaries, concepts and definitions
-                </p>
+              <div className="h-full flex items-center justify-center text-slate-500 text-center">
+                Ask questions about your notes
               </div>
             )}
 
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex ${
-                  msg.role === "user"
-                    ? "justify-end"
-                    : "justify-start"
-                }`}
-              >
+            {messages.map(
+              (msg, index) => (
                 <div
-                  className={`max-w-[85%] px-4 py-3 rounded-2xl ${
+                  key={index}
+                  className={`flex ${
                     msg.role === "user"
-                      ? "bg-gradient-to-r from-blue-600 to-purple-600"
-                      : "bg-slate-800"
+                      ? "justify-end"
+                      : "justify-start"
                   }`}
                 >
-                  <ReactMarkdown>
-                    {msg.content}
-                  </ReactMarkdown>
+                  <div
+                    className={`max-w-[85%] rounded-2xl p-3 ${
+                      msg.role === "user"
+                        ? "bg-blue-600"
+                        : "bg-slate-800"
+                    }`}
+                  >
+                    <ReactMarkdown>
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
 
             {asking && (
-              <div className="bg-slate-800 px-4 py-3 rounded-2xl w-fit">
+              <div className="bg-slate-800 p-3 rounded-2xl w-fit">
                 Thinking...
               </div>
             )}
+
+            <div ref={chatBottomRef} />
+
           </div>
 
-          <div className="sticky bottom-0 border-t border-slate-800 p-4 bg-slate-950">
+          <div className="border-t border-slate-800 p-4">
+
             <div className="flex gap-2">
+
               <input
                 value={question}
                 onChange={(e) =>
-                  setQuestion(e.target.value)
+                  setQuestion(
+                    e.target.value
+                  )
                 }
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    !asking
+                  ) {
+                    askQuestion();
+                  }
+                }}
                 placeholder="Ask anything..."
                 className="flex-1 bg-slate-900 rounded-xl px-4 py-3 outline-none"
               />
 
               <button
                 onClick={askQuestion}
-                className="bg-blue-600 px-4 rounded-xl"
+                disabled={asking}
+                className="bg-blue-600 px-4 rounded-xl disabled:opacity-50"
               >
                 <Send size={18} />
               </button>
+
             </div>
+
           </div>
+
         </section>
 
       </div>
