@@ -354,7 +354,7 @@ Users can ask contextual questions using the built-in chat interface.
 
 # 👨‍💻 Author
 
-**Sparsh Shreyash😎**
+**Sparsh Shreyash**
 
 Built using React, FastAPI, Ollama and Llama 3.
 
